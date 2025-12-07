@@ -1,0 +1,398 @@
+spark : an in memory compute engine
+features : in memory computation, lazy evaluation, fault tolerance, partitioning
+
+job -> stage -> task
+
+from pyspark.sql import SparkSession
+
+set PYSPARK_PYTHON=python
+set PYSPARK_DRIVER_PYTHON =python
+
+# Create or get existing SparkSession
+spark = SparkSession.builder \
+    .appName("MySparkApp") \
+    .getOrCreate()
+
+spark2=spark.newSession()
+
+spark=SparkSession.builder.appName("dada").enableHiveSupport().getOrCreate()
+
+
+spark.catalog.listTables()
+
+sc = spark.sparkContext
+
+#creating rdds
+my_list = [1, 2, 3, 4, 5]
+
+# Create RDD
+rdd = sc.parallelize(my_list) # from python variables
+rdd = sc.parallelize(my_list,3)
+# from textfile then textFile()
+
+
+sc.textFile('path')
+
+sc.hadoopFile()
+
+rdd.glom().collect()
+
+
+rdd.mapPartition(lambda it:[sum(it)])
+
+>>> rdd.mapPartitions(lambda x:[sum(1 for i in x)]).collect()  #count elements within parition using rdd
+
+
+rdd.mapPartitions(lambda x:[len(list(x))]).collect()
+
+rdd.mapPartitionsWithIndex(lambda ind,it:[(ind,i) for i in it]).collect()
+#mapParitions will pass an iterator and function should return an iterator
+
+rdd.sum()
+max_number = rdd5.max()
+
+#average
+rdd.sum()/rdd.count()
+
+#unique
+rdd.distinct()
+
+rdd.cartesian(rdd2)
+
+students.join(scores).collect()
+students.leftOuterJoin(scores).collect()
+students.rightOuterJoin(scores).collect()
+students.fullOuterJoin(scores).collect()
+#only supports equi join on kv pair
+#Non-equi join in RDDs → must simulate with cartesian + filter (very costly).
+
+
+rdd.reduceByKey(min).collect()
+
+if you wana count number of keys :
+rdd.mapValues(lambda x:1).reduceByKey(lambda x,y:x+y).collect()
+
+rdd.cartesian(rdd2)
+rdd.zip(rdd2)
+rdd.subtarct(rdd2)
+
+rdd3.mapValues(lambda salary: salary * 1.1).collect()
+rdd3.flatMapValues(lambda salary: salary * 1.1).collect()
+
+
+
+>>> rdd=rdd8 = sc.parallelize(["spark", "hadoop", "bigdata"],1)
+>>> rdd8.keyBy(lambda word: word[0]).collect()
+[('s', 'spark'), ('h', 'hadoop'), ('b', 'bigdata')]
+
+rdd5 = sc.parallelize([("A", 10), ("B", 20), ("A", 30), ("B", 40), ("C", 50)])
+result5 = rdd5.lookup("A")
+
+rdd6.countByKey()
+
+rdd.groupBy(lambda x:x[0]).mapValues(list).collect()
+>>> rdd.flatMap(lambda x:x.split()).map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y).takeOrdered(3,lambda x:-x[1])
+
+
+Method 3: Use zipWithIndex if you want positional "last elements" without collecting all
+
+rdd.zipWithIndex().filter(lambda x: x[1] >= count - 3).map(lambda x: x[0]).collect()
+
+takeOrdered and zipWithIndex avoids full collect hence avoiding driver oom
+
+
+# calculation of parallelism ie sc.defaultParallelism= max(no_of_threads,2) #if on single machine sc.defaultParallelism
+
+if you are picking local file and making rdd then by default split will be 32 mb 
+if picking from s3 then 64 mb split
+
+#min will be sc.defaultMinPartitions = min(2,sc.defaultParallelism)
+
+we can change the parition by rdd.repartition(5) or by colaesce 
+
+
+RDD operations :
+Transformation => Lazy  eg map,flatMap,
+Action => eager 
+
+
+
+map vs flatMap vs mapPartitions
+
+http://LT0191478.in.ril.com:4040
+l=['word count','can we do word count','in rdd can we do word count','rdd','do word count in all 3']
+rdd = sc.parallelize(l)# from python variables
+fmrdd=rdd.flatMap(lambda x:x.split(' '))
+mrdd=fmrdd.map(lambda x:(x,1))
+grprdd=mrdd.groupByKey()
+res=grprdd.map(lambda x:(x[0],sum(x[1])))
+
+
+rdd = sc.parallelize([("Math", 85), ("Science", 90), ("Math", 78), ("Science", 88), ("English", 75)])
+
+rdd.groupByKey().mapValues(list).mapValues(sum).collect()
+
+rdd1 = sc.parallelize([("Math", 85), ("Science", 90), ("Math", 78), ("Science", 88), ("English", 75)])
+
+without calling action , transformation will not be evaluated
+
+
+Types of transformation :
+Narrow vs Wide transformation
+
+whenever an action is invoked, a job will be triggered
+
+Whenever there is a wide transformation, Spark's job will be split into a new stage.
+
+no of tasks= no of partitions
+
+
+Spark Deploy Modes:
+Client mode vs Cluster mode
+
+
+
+Spark Architecuture : Driver ( DAG Scheduler => which will parse and make stages + Task Scheduler which will shcedule tasks on executor through cluster manager ) + Executor
+
+
+Distributed Shared Variables
+1.Broadcast Variable
+2.Accumulator
+
+
+Low level api in spark:
+1.RDD
+2.Broadcast variable
+3.Accumulator
+
+High Level Apis:
+1.Dataframe
+2.Dataset
+
+df=spark.read.format('csv').option('inferSchema',True).option('header',True).load('/FileStore/tables/BigMart_Sales.csv')
+
+dbutils.fs.ls('path')
+display(df)
+
+
+skeweness reasons in spark: groupby , join
+1. Job is taking time
+2. Uneven utilization of resources
+3. OOM errors/ disk spillage 
+
+
+Schema  define :
+2 methods DDL and StructType()
+
+First check: df.printSchema()
+#ddl way :
+my_schema='''
+        Item_Identifier string,
+        Item_Weight string,
+        Item_Fat_Content string,
+        Item_Visibility string,
+        Item_Type string,
+        Item_MRP string,
+        Outlet_Identifier string,
+        Outlet_Establishment_Year int,
+        Outlet_Size string,
+        Outlet_Location_Type string,
+        Outlet_Type string,
+        Item_Outlet_Sales decimal
+
+        '''
+
+df=spark.read.format('csv').schema(my_schema).option('header',True).load('/FileStore/tables/BigMart_Sales.csv')
+
+#StructType() way :
+from pyspark.sql.types import *
+from pyspark.sql.functions import *
+
+my_struct_schema=StructType(
+[	StructField('col_name1',StringType(),True) ]
+)
+
+>>> df.filter(df.sitecodes.isNull()).count()
+0
+>>> df.filter(df.sitecodes.isNotNull()).count()
+638
+>>>
+
+
+df.withColumns('new column name',lit('const val'))
+df.withColumnRenamed('old column name','new column name')
+df.drop(col('col_name'))
+
+
+
+3 ways by which column can be accessed in a spark df:
+
+ df.select('a','b','c').show()
+ df.select(col('a'),col('b'),col('c')).show()
+ df.select(df.a,df.b,df.c).show()
+
+df.select('item_Identifier','Item_Weight','Item_Fat_Content').display()
+
+you cannot use alias() without col()
+
+df.filter(col('item_fat_content')=='Regular').display()
+
+df.filter((col('item_fat_content')=='Regular') & (col('item_weight')<10)).display()
+
+df.filter((col('Outlet_Size').isNull())).display()
+
+df.filter((col('Outlet_Size').isNull()) & (col('Outlet_Location_type').isin('Tier 1','Tier 2'))  ).display()
+# Permanently rename 'item_weight' to 'weight'
+df = df.withColumnRenamed('item_weight', 'weight')
+df.show()
+
+
+#withColumn
+
+df=df.withColumn('new_col_name',lit('col_value'))
+df = df.withColumnRenamed('item_fat_content', regexp_replace(col('item_fat_content''),'Regular','REG')) )\
+	.withColumnRenamed('item_fat_content', regexp_replace(col('item_fat_content''),'Low Fat','LF')) )
+
+
+Type Casting:
+df=df.withColumn('item_fat_content',col('item_fat_content').cast(StringType()) )
+
+Sort/Order by :
+df=df.sort(col('item_fat_content').desc())
+
+df=df.sort(['item_weight','item_visibility'],ascending=[True,False])
+
+
+df.limit(10).show()
+x=df.drop('item_weight')
+df.drop('item_weight','item_visibility').show()
+
+#dedup
+df.dropDuplicates()
+df.dropDuplicates(['item_weight'])
+df.dropna(subset=['outlet_size']).select('outlet_size').show()
+
+from pyspark.sql import SparkSession
+spark=SparkSession.Builder().appName('learning').getOrCreate()
+
+schema='roll_no int, name string'
+data=[(1,'SH'),(2,'Sheikh')]
+df=spark.createDataFrame(data,schema)
+data=[(1,'dasda'),(3,'S')]
+df2=spark.createDataFrame(data,schema)
+x=df.union(df2)
+
+
+x=df.unionByName(df2) #you can also set allowMissingColumns=True to handle extra/missing columns
+
+df1.union(df2).distinct().show()
+df1.intersect(df2).show()
+df2.subtract(df1).show()
+
+
+#String Functions
+from pyspark.sql.functions import *
+
+df.select(initcap('name'))
+df.select(lower('name')).show()
+df.select(upper('name').alias('name1')).show()
+
+
+# date functions
+current_date()
+date_add('date',2)
+date_sub()
+x=x.withColumn('date_add',current_date())
+
+
+#datediff
+df=df.withColumn('new1',datediff(current_date(),current_date()+10))
+
+#date_format
+
+df=df.withColumn('dt_new',date_format('dt','dd-MMM-yy'))
+
+df.dropna('any',subset=['dt2','dt3']).show()
+df.dropna('all',subset=['dt2','dt3']).show()
+
+df.fillna('NA').show()
+
+#split
+df.select(split('outlet_type',' ').alias('sa')).show()
+df.select(split('outlet_type',' ').alias('sa')[0]).show()
+
+
+#exlode
+df=df.withColumn('new1',explode('array_column'))
+
+#array_contains
+x=x.withColumn('contains',array_contains('c1','Type'))
+
+#pivot
+x=x.groupBy('item_typ').pivot('outlet_size').agg(avg('item_mrp'))
+
+#when otherwise
+df.withColumn('veg_flag',when(col('item_type')=='Meat','Non-veg').otherwise('veg'))
+
+x.withColumn('veg_flag',when((col('veg_flag')=='veg') & (col('item_mrp')<100),'veg inexpensive' ).otherwise('non veg or expensive'))
+
+df.sortWithinPartitions("col1")
+df.orderBy("col_name")
+df.sort("col_name")
+
+
+>>> df=spark.read.option('multiLine','True').option('inferSchema','True').json(r'file:///C:\Users\sheikh.huda\Documents\pyspark200-master\pyspark200-master\03_creating_dataFrames\A1_Creating_DataFrames_using_Text_Based_formats\data\json_data\data_2.json')
+
+schema=df.schema
+
+df.selectExpr("age*1.1 as inc_age")
+
+
+df=spark.read.parquet('absolute_path')
+
+from pyspark.sql.functions import when,col,lit,substring
+
+df.sort('salary')
+
+df.sort(df.salary).filter(col('salary').isNotNull()).show()
+df.sort(df.dept.asc(),df.salary.desc()).filter(col('salary').isNotNull()).show()
+
+df.groupBy(df.dept).agg(f.countDistinct(df.salary)).show()
+
+t.join(bo,bo.token_color==t.color,'outer').show()
+df_employees.crossJoin(df_departments)
+
+
+df.na.drop().show() #df.dropna()
+df.na.drop(how='all').show()
+df.na.drop(how='all',subset=['Sales','Age']).show()
+
+
+df.fillna(0).show()
+df.fillna({'Name':'0','Age':0,'Sales':0}).show()
+
+x = df.select(fx.avg("Sales")).collect()[0][0]
+x = df.select(fx.avg("Sales")).first()[0]
+
+
+df.distinct().show()
+df.dropDuplicates().show()
+
+df.drop("age", "sales").show()
+df.select('Name').distinct().count()
+
+#Filter out rows with missing sales data
+df.filter(col("Sales").isNotNull()).show()
+
+
+df.filter(df.Sales.isNotNull() & df.Age.isNotNull()).show()
+
+df.withColumn('Sales',fx.when(df.Sales.isNull(),100).otherwise(df.Sales)  ).show()
+
+#count number of NULLS
+df.select( [fx.sum(fx.when(fx.col(c).isNull(),1).otherwise(0)).alias(c) for c in df.columns    ] ).show()
+
+
+df1.unionByName(df2, allowMissingColumns=True)
+
+	
